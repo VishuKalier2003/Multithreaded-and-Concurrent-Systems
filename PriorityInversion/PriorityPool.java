@@ -1,73 +1,52 @@
+import java.util.*;
 import java.util.concurrent.*;
 
 public class PriorityPool {
-    public final int POOL_RANK;
+    public final int poolRank;
     private final ExecutorService executor;
-    public final LinkedBlockingQueue<DataNode> queue = new LinkedBlockingQueue<>();
-    public final ConcurrentMap<Integer, DataNode> map = new ConcurrentHashMap<>();
+    private final PriorityBlockingQueue<DataNode> queue;
 
     public PriorityPool(int poolRank) {
-        this.POOL_RANK = poolRank;
+        this.poolRank = poolRank;
         this.executor = Executors.newFixedThreadPool(2);
+        this.queue = new PriorityBlockingQueue<>(10, Comparator.comparingInt(DataNode::getPriority).reversed());
     }
 
-    public void insert(int taskID, DataNode node) {
-        map.put(taskID, node);
+    public void addTask(DataNode node) {
+        queue.add(node);
     }
 
-    public void activate(int taskID) {
-        DataNode node = map.remove(taskID);
-        if (node != null)
-            queue.add(node);
-    }
-
-    public void upgrade(int taskID, int newPriority) {
-        DataNode node = map.remove(taskID);
-        if (node != null) {
-            node.priority = newPriority;
-            InversionScheduler.poolMap
-                    .computeIfAbsent(newPriority, PriorityPool::new)
-                    .insert(taskID, node);
-        }
-    }
-
-    /**
-     * Non-blocking asynchronous execution
-     */
-    public CompletableFuture<String> executeAsync() {
-        return CompletableFuture.supplyAsync(() -> {
+    public CompletableFuture<Void> startWorker() {
+        return CompletableFuture.runAsync(() -> {
             try {
-                DataNode node = queue.take();
+                while (!Thread.currentThread().isInterrupted()) {
+                    DataNode node = queue.take();
 
-                // --- Detect inversion and trigger donation ---
-                for (DataNode child : node.prerequisites) {
-                    if (child.priority < node.priority) {
-                        System.out.printf("Priority Inversion detected: child %d < parent %d → upgrading...%n",
-                                child.priority, node.priority);
-                        InversionScheduler.poolMap.get(child.priority)
-                                .upgrade(child.taskID, node.priority);
-                        InversionScheduler.poolMap.get(child.priority)
-                                .activate(child.taskID);
+                    // --- Handle donation to prerequisites ---
+                    for (DataNode prereq : node.prerequisites) {
+                        if (prereq.getPriority() < node.getPriority()) {
+                            System.out.printf("Donation: %s -> %s%n", node.taskName, prereq.taskName);
+                            prereq.donatePriority(node.getPriority());
+                            queue.add(prereq); // re-queue after donation
+                        }
+                    }
+
+                    process(node);
+
+                    // --- Trigger dependents ---
+                    for (DataNode dep : node.dependents) {
+                        if (!queue.contains(dep)) queue.add(dep);
                     }
                 }
-
-                process(node);
-                return "Task " + node.taskID + " completed at priority " + POOL_RANK;
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return "Interrupted: " + e.getMessage();
-            }
+            } catch (InterruptedException ignored) { }
         }, executor);
     }
 
     private void process(DataNode node) throws InterruptedException {
-        System.out.printf("→ Executing [%s] (Priority: %d)%n", node.task(), node.priority);
-        Thread.sleep(1000);
-        System.out.printf("✓ Completed [%s]%n", node.task());
+        System.out.printf("Executing [%s] with effective priority %d%n", node.taskName, node.getPriority());
+        Thread.sleep(500);
+        System.out.printf("Completed [%s]%n", node.taskName);
     }
 
-    public void shutdown() {
-        executor.shutdown();
-    }
+    public void shutdown() { executor.shutdownNow(); }
 }

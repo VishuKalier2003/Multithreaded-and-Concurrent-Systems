@@ -2,33 +2,29 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class InversionScheduler {
-
-    public static final ConcurrentMap<Integer, PriorityPool> poolMap = new ConcurrentHashMap<>();
-    private final List<CompletableFuture<String>> futures = new ArrayList<>();
+    private final Map<Integer, PriorityPool> pools = new HashMap<>();
+    private final List<CompletableFuture<Void>> futures = new ArrayList<>();
 
     public void createPool(int rank) {
-        poolMap.putIfAbsent(rank, new PriorityPool(rank));
+        pools.put(rank, new PriorityPool(rank));
     }
 
-    public void insertIntoPool(DataNode node, int rank) {
-        poolMap.computeIfAbsent(rank, PriorityPool::new).insert(node.taskID, node);
+    public void addTask(DataNode node, int poolRank) {
+        pools.computeIfAbsent(poolRank, PriorityPool::new).addTask(node);
     }
 
-    public void connect(DataNode parent, DataNode child) {
-        parent.addPrerequisites(child);
+    public void startAll() {
+        pools.values().forEach(pool -> futures.add(pool.startWorker()));
     }
 
-    public void submitAll() {
-        poolMap.values().forEach(pool -> futures.add(pool.executeAsync()));
-    }
-
-    public void awaitCompletion() {
+    public void awaitCompletion(long timeoutMs) {
         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-            .thenRun(() -> System.out.println("\n=== All tasks completed ==="))
+            .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+            .exceptionally(_ -> { return null; })
             .join();
     }
 
     public void shutdownAll() {
-        poolMap.values().forEach(PriorityPool::shutdown);
+        pools.values().forEach(PriorityPool::shutdown);
     }
 }

@@ -1,25 +1,31 @@
-
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class DataNode {
-    public final String task;
+    public final String taskName;
     public final int taskID;
-    public int priority;
-    public final List<DataNode> prerequisites;
+    public final List<DataNode> dependents;  // tasks that wait for this
+    public final List<DataNode> prerequisites; // tasks this depends on
+    public final AtomicInteger effectivePriority; // for donation
+    public int basePriority;
 
-    public DataNode(String task, int uuid, int priority) {
-        this.task = task;
-        this.taskID = uuid;
-        this.priority = priority;
+    public DataNode(String taskName, int taskID, int basePriority) {
+        this.taskName = taskName;
+        this.taskID = taskID;
+        this.basePriority = basePriority;
+        this.effectivePriority = new AtomicInteger(basePriority);
+        this.dependents = new ArrayList<>();
         this.prerequisites = new ArrayList<>();
     }
 
-    public void addPrerequisites(DataNode data) {
-        prerequisites.add(data);
+    public void addPrerequisite(DataNode prerequisite) {
+        this.prerequisites.add(prerequisite);
+        prerequisite.dependents.add(this);
     }
 
-    public int priority() {return priority;}
-    public int taskID() {return taskID;}
-    public String task() {return task;}
+    public int getPriority() { return effectivePriority.get(); }
+
+    public void donatePriority(int newPriority) {
+        effectivePriority.updateAndGet(curr -> Math.max(curr, newPriority));
+    }
 }
