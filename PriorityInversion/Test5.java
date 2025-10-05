@@ -26,7 +26,7 @@ public class Test5 {
                 "Low priority task should have received donation from high priority dependent.");
 
         scheduler.shutdownAll();
-        System.out.println("✅ Priority inversion resolved dynamically!");
+        System.out.println("Priority inversion resolved dynamically!");
     }
 
     public static void assertTrue(boolean cond, String msg) {
