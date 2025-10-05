@@ -1,0 +1,10 @@
+{
+    "java.project.sourcePaths": [
+        "ConcurrentSnapShotArray",
+        "LoadBalancedTaskQueue",
+        "LockFreeQueue",
+        "PriorityInversion",
+        "PriorityTaskQueue"
+    ],
+    "java.project.referencedLibraries": []
+}
